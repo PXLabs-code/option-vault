@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    container_name: option-vault-web
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - option_vault_data:/data
+      - ./logs:/data/logs
+      - ./exports:/data/exports
+      - ./backups:/data/backups
+    command: python -m app.cli serve-web
+    restart: unless-stopped
+
+  worker:
+    build: .
+    container_name: option-vault-worker
+    env_file:
+      - .env
+    volumes:
+      - option_vault_data:/data
+      - ./logs:/data/logs
+      - ./exports:/data/exports
+      - ./backups:/data/backups
+    command: python -m app.cli serve-worker
+    restart: unless-stopped
+
+volumes:
+  option_vault_data:
