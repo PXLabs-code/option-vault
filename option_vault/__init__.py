@@ -1,0 +1,1 @@
+"""Delayed option snapshot collector."""

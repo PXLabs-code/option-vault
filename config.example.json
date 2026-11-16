@@ -1,0 +1,53 @@
+{
+  "symbols": ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "SPCX", "SBET"],
+  "data_dir": "./data",
+  "secrets_file": "~/.config/option-vault/telegram.json",
+  "http": {
+    "user_agent": "OptionVault/0.1 personal delayed-data research",
+    "timeout_seconds": 30,
+    "interval_seconds": 2,
+    "retries": 2,
+    "backoff_seconds": 5,
+    "max_backoff_seconds": 300
+  },
+  "sources": {
+    "cboe_base_url": "https://cdn.cboe.com/api/global/delayed_quotes",
+    "cboe_timestamp_timezone": "UTC",
+    "yfinance_fallback": true,
+    "daily_history_period": "1mo"
+  },
+  "range": {
+    "max_years": 1,
+    "delta_min": 0.05,
+    "delta_max": 0.5,
+    "delta_margin": 0.02,
+    "moneyness_sigma": 2.0,
+    "fallback_iv": 0.6
+  },
+  "quality": {
+    "low_oi": 10,
+    "wide_spread_ratio": 0.5,
+    "stale_seconds": 2700,
+    "future_timestamp_tolerance_seconds": 120,
+    "count_drop_ratio": 0.5,
+    "missing_fields_ratio": 0.3,
+    "zero_bid_alert_ratio": 0.8
+  },
+  "schedule": {
+    "calendar": "NYSE",
+    "regular_times": ["10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "15:50"],
+    "close_delay_minutes": 15,
+    "grace_minutes": 8
+  },
+  "iv": {
+    "target_days": 30,
+    "max_atm_log_moneyness": 0.1,
+    "history_observations": 252
+  },
+  "hourly_watch": {
+    "enabled": true,
+    "symbol": "SBET",
+    "occ_symbol": "SBET280121C00008000"
+  },
+  "telegram": {"enabled": true, "timeout_seconds": 15}
+}
