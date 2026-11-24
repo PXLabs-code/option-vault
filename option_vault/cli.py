@@ -5,7 +5,9 @@ import fcntl
 import logging
 import shutil
 import signal
+import sqlite3
 import uuid
+from contextlib import closing
 from datetime import date, datetime, timezone
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -89,10 +91,21 @@ def main() -> None:
                         "vault.sqlite3",
                         "vault.sqlite3-wal",
                         "vault.sqlite3-shm",
+                        "research.sqlite3-wal",
+                        "research.sqlite3-shm",
+                        "research.sqlite3-journal",
                     }:
                         continue
                     if child.is_dir():
                         shutil.copytree(child, target / child.name)
+                    elif child.name == "research.sqlite3":
+                        with (
+                            closing(
+                                sqlite3.connect(child.resolve().as_uri() + "?mode=ro", uri=True)
+                            ) as source,
+                            closing(sqlite3.connect(target / child.name)) as destination_db,
+                        ):
+                            source.backup(destination_db)
                     else:
                         shutil.copy2(child, target / child.name)
                 storage.backup(target / "vault.sqlite3")

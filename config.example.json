@@ -49,5 +49,15 @@
     "symbol": "SBET",
     "occ_symbol": "SBET280121C00008000"
   },
-  "telegram": {"enabled": true, "timeout_seconds": 15}
+  "telegram": {"enabled": true, "timeout_seconds": 15},
+  "web": {
+    "scoring": {
+      "weights": {"efficiency": 45, "history": 20, "tail": 20, "quality": 15},
+      "efficiency_scale": 0.2,
+      "tail_scale": 0.2,
+      "min_samples": 20,
+      "max_history_gap_days": 10,
+      "endpoint_tolerance_days": 4
+    }
+  }
 }

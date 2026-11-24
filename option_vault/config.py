@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any
 
 from .parsing import OCC, contract
+from .scoring import DEFAULTS
 
 
 def load_config(path: str) -> dict[str, Any]:
@@ -56,6 +58,28 @@ def load_config(path: str) -> dict[str, Any]:
         ):
             raise ValueError("hourly_watch must use an exact OCC code for a configured symbol")
         contract(code)
+    scoring = {**DEFAULTS, **cfg.get("web", {}).get("scoring", {})}
+    if set(scoring["weights"]) != set(DEFAULTS["weights"]):
+        raise ValueError("web.scoring.weights must specify efficiency,history,tail,quality")
+    weights = scoring["weights"].values()
+    if (
+        any(
+            not isinstance(w, (int, float)) or not math.isfinite(w) or not 0 <= w <= 100
+            for w in weights
+        )
+        or sum(weights) <= 0
+    ):
+        raise ValueError("Scoring weights must be finite 0..100 with a positive sum")
+    for key in (
+        "efficiency_scale",
+        "tail_scale",
+        "min_samples",
+        "max_history_gap_days",
+        "endpoint_tolerance_days",
+    ):
+        value = scoring[key]
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"web.scoring.{key} must be finite and positive")
     return cfg
 
 

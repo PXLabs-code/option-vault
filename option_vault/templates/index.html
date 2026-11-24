@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Option Vault · 卖方研究工作台</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/assets/plotly.js"></script>
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="/">OV<span>OPTION VAULT<small>卖方研究工作台</small></span></a>
+  <div class="nav-label">WORKSPACE</div>
+  <nav aria-label="页面导航">
+    <button class="nav active" data-view="ranking">01 <span>策略排行榜</span></button>
+    <button class="nav" data-view="overview">02 <span>波动率概览</span></button>
+    <button class="nav" data-view="explore">03 <span>期限探索</span></button>
+    <button class="nav" data-view="watch">04 <span>关注合约</span></button>
+    <button class="nav" data-view="health">05 <span>采集与证据</span></button>
+    <button class="nav" data-view="method">06 <span>评分方法</span></button>
+  </nav>
+  <div class="sidebar-note"><span class="dot"></span> 本地只读数据<br>延迟行情 · 不自动交易<br><small>历史情景 ≠ 未来概率</small></div>
+</aside>
+<main>
+  <header>
+    <div><div class="eyebrow">RESEARCH / NOT RECOMMENDATIONS</div><h1 id="page-title">策略排行榜</h1></div>
+    <div class="header-right"><span id="updated">读取数据中…</span><button id="refresh" class="button secondary">刷新数据</button></div>
+  </header>
+  <div class="notice">研究提示：分数是实验性的候选比较工具，不代表值得交易。历史到期未进入价内比例，不是盈利率、实际未指派率或未来胜率。</div>
+  <div id="error" class="error" role="alert" hidden></div>
+  <section id="ranking" class="view">
+    <div class="strategy-switch" role="group" aria-label="选择策略">
+      <button class="strategy selected" data-side="P"><strong>卖 Put</strong><small>比较接货价格与收租效率</small></button>
+      <button class="strategy" data-side="C"><strong>备兑 Call</strong><small>比较交付价格与收租效率</small></button>
+    </div>
+    <div class="grid rank-layout">
+      <div>
+        <div class="panel intro"><div><div class="eyebrow">CANDIDATE EXPLORER</div><h2>先比较，再理解取舍</h2><p>仅包含已保存的虚值合约，不代表全市场。点击一行，查看报价、历史情景和风险说明。</p></div><div class="big-number" id="candidate-count">—<small>可比较候选</small></div></div>
+        <div class="panel filters">
+          <label>历史日期<select id="snapshot-day"><option value="">各标的最新</option></select></label>
+          <label>采集时点（ET）<select id="snapshot-run"><option value="">各标的最新</option></select></label>
+          <label>标的<select id="symbol-filter"><option value="">全部标的</option></select></label>
+          <label>最少 DTE<input id="min-dte" type="number" value="1" min="0" max="366"></label>
+          <label>最多 DTE<input id="max-dte" type="number" value="366" min="0" max="366"></label>
+          <label class="checkbox"><input id="include-low" type="checkbox">显示低可信度</label>
+          <button id="apply" class="button">应用筛选</button>
+        </div>
+        <div class="panel chart-panel"><div class="panel-heading"><h2>效率与历史结果</h2><span>本页最多50个候选 · 点选查看合约</span></div><div id="ranking-chart" class="chart"></div></div>
+      </div>
+      <aside class="panel weights">
+        <div class="eyebrow">YOUR COMPARISON LENS</div><h2>收租效率优先</h2><p>调整的是比较偏好，不是历史事实。权重自动归一化。</p>
+        <div id="weight-controls"></div>
+        <button id="reset-weights" class="text-button">恢复实验性默认值</button>
+        <p id="weight-message" class="muted"></p><a class="text-link" href="#method">展开公式与限制 →</a>
+      </aside>
+    </div>
+    <div class="panel">
+      <div class="panel-heading"><h2>候选列表 <span id="result-count" class="muted"></span></h2><a id="ranking-csv" class="button secondary" href="/api/export">导出当前筛选 CSV ↓</a></div>
+      <p class="muted" id="ranking-empty"></p>
+      <div class="table-wrap"><table><thead><tr><th>标的 / 到期日</th><th>行权价</th><th>Bid / mid / Ask</th><th>粗算年化¹</th><th>历史未进价内²</th><th>样本</th><th>比较分</th><th>证据状态</th></tr></thead><tbody id="ranking-body"></tbody></table></div>
+      <div class="pager"><button id="prev" class="button secondary">上一页</button><span id="page-label"></span><button id="next" class="button secondary">下一页</button></div>
+      <p class="footnote">¹ 每股 mid ÷ 参考基数 × 365 ÷ 报价时 DTE；Put 基数是行权价，Call 是标的现价。不是账户收益率，也不保证全年可重复。² 股价情景统计，非期权回测。</p>
+    </div>
+  </section>
+  <section id="overview" class="view" hidden>
+    <div class="panel-heading"><div><h2>波动率，不是推荐排名</h2><p>各标的最新标准化 IV 可来自不同交易日；高 IV 不等于更值得卖。</p></div><a class="button secondary" href="/api/export?kind=iv">导出 IV 历史 CSV ↓</a></div>
+    <div id="iv-cards" class="cards"></div>
+    <div class="panel"><h2>标准化 IV · 全部已有历史</h2><div id="iv-chart" class="chart tall"></div></div>
+  </section>
+  <section id="explore" class="view" hidden>
+    <div class="panel"><h2>同一个价格，不同的等待时间</h2><p>Put：选择愿意接货的价格；Call：选择愿意交付股票的价格。图表只展示真实保存的报价，不插补缺失到期日。</p>
+      <div class="filters"><label>标的<select id="explore-symbol"></select></label><label>策略<select id="explore-side"><option value="P">卖 Put</option><option value="C">备兑 Call</option></select></label><label>行权价<select id="explore-strike"></select></label></div>
+    </div>
+    <div class="grid detail-layout"><div class="panel"><h2>期限报价 · 每股美元</h2><div id="expiry-chart" class="chart tall"></div></div><div class="panel"><h2>如何理解这张图</h2><p>mid 是 Bid 和 Ask 的中间值，不保证成交。区间越宽，报价不确定性往往越大。</p><p>远月收到的权利金可能更多，但等待更久，市场变化和指派风险不能仅靠粗算年化概括。</p><p>这里只保存一年内、指定虚值/Delta 区间。某期限没有点，不代表市场没有这个合约。不同采集日期的点不能当作同步行情。</p><p>点击数据点，展开合约的历史证据。</p><div id="expiry-notes" class="muted"></div></div></div>
+  </section>
+  <section id="watch" class="view" hidden>
+    <div class="panel"><div class="eyebrow">WATCHLIST / INDEPENDENT HISTORY</div><h2 id="watch-title">关注合约</h2><p>来自独立每小时采集；不受普通一年期链范围限制，不混入候选排行榜。图表不是实时行情，零价及未知时间需谨慎解读。</p><a id="watch-csv" class="button secondary">导出关注合约 CSV ↓</a><div id="watch-chart" class="chart tall"></div><div id="watch-note" class="muted"></div></div>
+  </section>
+  <section id="health" class="view" hidden>
+    <div class="panel"><h2>历史证据覆盖</h2><p>价格历史不等于期权报价历史。价格不足时不编造胜率；全量历史的真实起止日期见下表。</p><div class="table-wrap"><table><thead><tr><th>标的</th><th>日线数量</th><th>起始日期</th><th>截止日期</th></tr></thead><tbody id="coverage-body"></tbody></table></div></div>
+    <div class="panel"><h2>最近 60 次运行</h2><div class="table-wrap"><table><thead><tr><th>交易日</th><th>时点（ET）</th><th>状态</th><th>开始 UTC</th><th>错误</th></tr></thead><tbody id="runs-body"></tbody></table></div></div>
+  </section>
+  <section id="method" class="view" hidden>
+    <div class="panel prose"><div class="eyebrow">METHODOLOGY / VERSION 1 · EXPERIMENTAL</div><h2>比较分是如何产生的</h2>
+      <p>这不是历史期权回测。它将当前采集报价与历史股价情景分开呈现，没有历史权利金、提前平仓、保证金、交易成本或提前指派模拟。未对当前波动环境分组，不代表针对当前的预测概率。</p>
+      <h3>1 / 样本与历史比例</h3><p>使用该标的全部可用 Yahoo Close（日线，拆股调整但不作分红再投资调整）。只使用采集日之前的数据，按报价时原始日历 DTE 从最早日期开始选不重叠区间。终点落在非交易日时取此前最近交易日，最多容许配置中的天数差。下一个起点晚于前一终点。期限和实际行权价/现价比例映射到每个历史起点，不需要历史上真的上市过同样行权价。</p>
+      <p>Put：历史终价/起价 ≥ 当前行权价/现价；Call：≤。比例是到期未进入价内的历史频率，不是盈利率或未指派率。详情显示 Wilson 95% 参考区间，但非重叠样本也未必独立，不能解释成未来概率保证。起始日期选择、公司转型、拆股、分红和数据缺口均可能影响结果。</p>
+      <h3>2 / 实验性分项（0–100）</h3><ul>
+        <li>收租效率：E = mid / 基数 × 365 / 原始DTE；分项 = 100E/(E + 效率尺度)。Put 基数为行权价，Call 为现价。临期年化很高不代表可以全年重复。</li>
+        <li>历史结果：到期未进入价内的历史比例 × 100。</li>
+        <li>尾部风险：100/(1 + 历史不利幅度95分位/尾部尺度)。Put 不利幅度为跌破接货价的幅度（相对起始股价），Call 为股票下跌幅度；Call 另列错失上涨案例。该分项不计权利金，不是损益 VaR。</li>
+        <li>报价质量：100 × (1 − min(1, 相对价差)) × min(1, OI / 低OI阈值)。其他时间和数据异常单独影响可信度。</li>
+      </ul><p>总分为各分项按滑块权重归一化后的加权平均。默认 45/20/20/15 是实验偏好，未经收益验证，不是最优模型。缺必要报价、期限或有权重的历史分项时显示“无法计算”，不把缺失当成零；低样本但可算的分数只作参考。</p>
+      <h3>3 / 低可信度与排行榜</h3><p>非今日采集、源时间陈旧/未知/超前、零或交叉报价、宽价差、低/缺 OI、样本不足、历史覆盖陈旧等会标记低可信度，默认排除。最新报价按“各标的最近成功采集整轮”读取，不将消失的旧合约不断带回榜单。配置阈值和当前权重如下。</p><pre id="method-config"></pre>
+      <h3>4 / 阅读风险案例</h3><p>Put 要理解接货后股票仍可继续下跌；备兑 Call 既承受股票下跌，也可能因交付股票而错失上涨。没有持股成本，不计算组合真实最大收益。历史最差情况不是未来最大损失，股票可能跌至零，真实美式期权也可能提前指派。</p>
+    </div>
+  </section>
+  <section id="detail" class="view" hidden>
+    <button id="back" class="text-button">← 返回候选列表</button>
+    <div class="panel"><div class="panel-heading"><div><div class="eyebrow">CONTRACT RESEARCH</div><h2 id="detail-title"></h2></div><a id="detail-csv" class="button secondary">导出历史 CSV ↓</a></div><div id="detail-summary"></div></div>
+    <div class="grid detail-layout">
+      <div class="panel"><div class="panel-heading"><h2>真实采集历史</h2><label>指标<select id="history-metric"><option value="quotes">Bid / Ask / mid / Last</option><option value="iv">IV</option><option value="greeks">Greeks</option><option value="activity">成交量 / OI</option></select></label></div><div id="history-chart" class="chart tall"></div><p class="muted">Last 可能来自早前成交；缺失不插值。成交量为数据源累计值，OI 日内不变是正常现象。拖动缩放，双击重置。</p></div>
+      <div class="panel"><h2>评分拆解与交易含义</h2><div id="score-parts"></div><div id="trade-explanation" class="explanation"></div></div>
+    </div>
+    <div class="panel"><h2>历史股价情景 · 不是期权回测</h2><div id="stats-summary"></div><div id="risk-cases"></div><div id="risk-chart" class="chart"></div></div>
+  </section>
+  <footer>OPTION VAULT / 本地历史研究 · 延迟与缺失均如实展示 · CSV 中 IV 和收益率使用小数，时间列带 UTC/ET 标识</footer>
+</main>
+</body>
+</html>

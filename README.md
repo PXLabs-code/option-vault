@@ -1,6 +1,6 @@
 # Option Vault
 
-在常开 Mac mini 上积累**免费延迟美股期权快照**，只做采集、永久存储及 Telegram 数据获取报告，不做交易或行情判断。
+在常开 Mac mini 上积累**免费延迟美股期权快照**，支持永久存储、Telegram 数据获取报告，以及只读的卖方研究网站。网站提供实验性比较分与历史股价情景统计，不进行交易或承诺未来收益。
 
 ## 设计与文件结构
 
@@ -280,4 +280,105 @@ plutil -lint launchd/com.optionvault.collector.plist
 sh -n scripts/backup.sh scripts/launchd-run.sh
 ```
 
-测试使用固定响应结构和隔离数据库，不消耗接口流量、不发真实 Telegram。首次部署仍须手动真实采一轮，并验证自己的 Telegram 权限和 chat id；没有凭据时无法验证真实消息送达。未提供自动下单、看板、保证金、多腿分析或历史期权回补。
+测试使用固定响应结构和隔离数据库，不消耗接口流量、不发真实 Telegram。首次部署仍须手动真实采一轮，并验证自己的 Telegram 权限和 chat id；没有凭据时无法验证真实消息送达。未提供自动下单、保证金、多腿分析或历史期权回补。可视化研究网站见下节。
+
+## 10. 可视化研究网站
+
+### 启动和使用
+
+```sh
+.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/option-vault-web --config config.local.json
+```
+
+默认地址 `http://127.0.0.1:8765`。使用 Waitress，不使用 Flask 调试服务器；只读打开采集库和研究库，不获取 Telegram 凭据、不占采集器文件锁、不修改期权数据。图表库从本地提供，不依赖外部 CDN。每60秒刷新当前页面；评分结果最多缓存60秒。日志为配置数据目录的 `logs/web.log`，按 UTC 日期轮转。缺少数据库或读取失败会返回明确错误，不伪造空结果。
+
+页面：
+
+- **策略排行榜**：选择卖 Put / 备兑 Call，按标的、DTE、历史日期/采集轮次筛选；调整四个评分权重，服务端重算全体候选排名。列表每页50个，散点图仅绘制本页。日期默认各标的最新成功快照；历史模式的DTE是报价时原始DTE，历史结果仍只使用当时以前的股价。过旧合约不再混入最新榜。
+- **波动率概览**：每个标的最新标准化 IV、对应日期与来源、完整已积累 IV 曲线；IV Rank/Percentile 样本不足则明确标记。
+- **期限探索**：先选标的和行权价，再查看各到期日的每股 mid 与 Bid/Ask 区间。未知或零报价不画成正常收益；列出已知缺失期限，不插值补造报价。点击图中的合约进入详情。
+- **合约研究**：真实 Bid/Ask/mid/Last、IV、Greeks、成交量/OI 历史曲线，支持缩放、平移、图例切换。展示分项、历史比例、最不利5次情景和风险分布；备兑 Call 的股票下跌与错失上涨分开。
+- **关注合约**：独立展示配置的 SBET 2028 $8 Call 每小时报价历史，不受普通一年期链范围限制，也不因此扩大普通链的采集。
+- **采集与证据**：最近60次运行状态及股价历史实际覆盖范围。
+- **评分方法**：完整公式、参数、限制，不隐藏实验性假设。
+
+CSV 支持当前筛选的**全部结果（不止当前页）**、单合约完整采集历史、关注合约历史和全部标准化 IV。UTF-8 BOM 便于 Excel 打开；IV/收益率为小数、权利金为每股美元，UTC/ET 时间有明确列名；评分导出带权重、分项和可信度原因。缺失字段留空。防止字符串被表格软件作为公式执行。
+
+### 全量股价历史（不是期权历史回补）
+
+```sh
+# 获取每个配置标的所有可用日线，明确失败并返回非零
+.venv/bin/option-vault-history --config config.local.json
+# 也可只刷新一个标的
+.venv/bin/option-vault-history --config config.local.json --symbol SPY
+```
+
+单独保存在数据目录 `research.sqlite3`，不改动原有每日辅助数据任务和一年期权范围：
+
+| 表 | 内容 |
+|---|---|
+| prices | symbol+day 为主键，close 为 Yahoo Close（拆股调整、不作分红再投资调整） |
+| imports | 每个标的最后导入时间、实际首尾日期、条数、来源说明 |
+
+全量导入成功时事务替换该标的整段序列，避免新旧拆股尺度混接；失败保留旧序列并记日志。每次行情HTTP响应仍归档。研究库不存在或该标的尚未导入时，网站使用已有的短期 `daily_history`，如实标记样本不足。默认不会把当天未完成日线或快照日及之后数据用于历史统计。历史上市代码可能承接完全不同的公司业务（如长期历史中的转型），统计未能自动识别所有制度变化，必须自行审阅实际覆盖期与风险案例。
+
+建议每天美股收盘后刷新。`launchd/com.optionvault.history.plist` 为每天 **Mac系统本地09:00** 的用户级任务示例，调整路径和本机时区后安装；本机已安装相同任务，首次全量导入已完成。不是保证历史永不缺失，Yahoo 返回历史的起止可能因标的而异。价格历史不是历史期权报价，不能用来验证过去可成交权利金、提前平仓收益或提前指派。
+
+### 实验性评分 v1
+
+默认权重：收租效率45、历史结果20、尾部风险20、报价质量15；滑块允许0–100，按总和归一化，不能全部为零。未经过收益优化，不能视为最优权重。
+
+- **效率**：`E = mid / B × 365 / 原始DTE`；Put 的 B=行权价，Call 的 B=标的现价。分项 `100E/(E+0.20)`。旧快照不会因为今天离到期更近而被动放大年化。临期高年化不代表全年可重复收取。
+- **历史结果**：按该合约快照时的日历 DTE、`strike/spot` 比例，将全部可用历史分成非重叠起止区间。最早可用交易日为锚点；下个起点晚于前一终点；终点遇非交易日取此前最近交易日，最多容许4天误差。仅使用快照美东日期之前的收盘数据。Put 的终价/起价 ≥ strike/spot 算未进入价内；Call 用 ≤。分项=比例×100。
+- **尾部风险**：Put 用 `max(0, strike/spot − 历史终价/起价)`，Call 用 `max(0, −历史股价收益率)`；以样本95分位 L 计算 `100/(1+L/0.20)`。不含权利金、费用，不是损益 VaR；Call 的错失上涨另外列示。
+- **报价质量**：`100 × (1−min(1,spread/mid)) × min(1,OI/低OI阈值)`，其他时间和数据异常单列可信度。
+- **总分**：有正权重分项的加权平均。必要报价/历史缺失时显示无法计算，不以零代填。只剩少量样本仍可显示参考分，但标记低可信度，默认不进排行榜。
+
+低可信度包括：非今日报价、源时间陈旧/未知/超前、零或交叉报价、价差超过质量阈值、OI不足、非重叠样本少于20组、股价历史距报价日超过10天等。日期与陈旧判断基于当前美东日期，所以开盘前、周末或收盘后也可能没有符合默认门槛的候选；可勾选低可信度查看，不会用旧数据充当今日行情。
+
+阈值放在 `config.example.json` 的 `web.scoring`，旧配置省略时使用同样的默认值，报价阈值复用 `quality`。修改配置后重启网站。历史比例的 Wilson 95% 区间仅作样本不确定性参考，**非重叠不代表独立，不能当作未来胜率区间**。不匹配当前波动环境，不自动建议建仓；历史最差情况不是未来最大损失。
+
+### Tailscale 访问
+
+默认只监听回环地址。优先使用仅 Tailnet 可见的 HTTPS：
+
+```sh
+tailscale serve --bg http://127.0.0.1:8765
+tailscale serve status
+```
+
+如果 shell 找不到 `tailscale`，Mac App 版可用 `/Applications/Tailscale.app/Contents/MacOS/Tailscale` 替代。需要 Tailnet 管理员先启用 Serve/HTTPS；**不要使用 Funnel**（它会开放公网）。如机器已有 Serve 路由，不要覆盖它，先看 status，再给该站分配单独路径或端口。
+
+本机 Tailnet 尚未授权 Serve，因此当前部署采用替代方案：同时绑定本地回环与本机 Tailscale IPv4：
+
+```sh
+.venv/bin/option-vault-web --config config.local.json --tailscale-ip "$(tailscale ip -4)"
+```
+
+参数只接受 `100.64.0.0/10` 中的地址，不接受 `0.0.0.0` 或普通局域网地址。本机当前入口 **http://100.102.136.83:8765**，同 Tailnet 且被 ACL/grants 允许的设备可访问；公网、普通LAN不直接提供监听。该HTTP连接在 Tailnet 隧道内传输，但浏览器层面不是HTTPS。没有第二套网站账号，访问控制依赖 Tailnet 的身份与网络规则；请仅授予可信设备访问。若节点IP变化，需要更新启动参数。以后启用HTTPS后可去掉额外IP监听。
+
+### 网站常驻与启停
+
+`launchd/com.optionvault.web.plist` 和 `scripts/web-run.sh` 是用户级 LaunchAgent 示例；替换绝对路径后安装。网站不与采集器共用Label。
+
+```sh
+cp launchd/com.optionvault.web.plist ~/Library/LaunchAgents/com.optionvault.web.plist
+# 先用本地编辑器修改已复制文件里的绝对路径
+plutil -lint ~/Library/LaunchAgents/com.optionvault.web.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.optionvault.web.plist
+launchctl print gui/$(id -u)/com.optionvault.web
+```
+
+本机已安装并启动；已安装plist中增加了脚本第二个参数 `100.102.136.83`，由包装脚本传给 `--tailscale-ip`。默认仓库示例不含此机器专用地址。重启与停止：
+
+```sh
+# 重启网站，不影响采集服务
+launchctl kickstart -k gui/$(id -u)/com.optionvault.web
+# 停止并取消当前用户会话中的自动重启
+launchctl bootout gui/$(id -u)/com.optionvault.web
+```
+
+网站 KeepAlive 自动恢复进程；SSH断开不影响，用户注销后会停止，重启后需要用户登录。无人登录运行应按采集器的 LaunchDaemon 方式以普通用户身份部署，并确保 Tailscale 网络和磁盘已就绪。`web-run.sh` 的解释器启动输出写项目 `data/logs/web-launchd-日期.log`；应用日志按日轮转永久保留。
+
+研究历史定时任务安装方式相同（Label `com.optionvault.history`，每天本地09:00）。网站静态页面、Plotly资源与CSV下载都由同一进程提供，和 Telegram 没有依赖。备份命令会同时使用在线 backup API 备份 `vault.sqlite3` 与 `research.sqlite3`，两库各自一致但不是跨库同一瞬时事务；原始响应照常复制。
